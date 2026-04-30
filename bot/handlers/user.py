@@ -32,19 +32,36 @@ class AccessRequestStates(StatesGroup):
 router = Router()
 
 @router.callback_query(F.data == "check_subs")
-async def handle_check_subscription(callback: types.CallbackQuery):
-    # 1. Удаляем сообщение с кнопкой проверки
-    await callback.message.delete()
-    
-    # 2. Отправляем текст и ГЛАВНОЕ МЕНЮ
-    await callback.message.answer(
-        "✅ **Подписка подтверждена!**\n"
-        "Теперь вам доступны все функции бота. Используйте меню ниже.",
-        reply_markup=await get_main_menu_keyboard(callback.from_user.id) # Ваша функция меню
-    )
-    
-    # 3. Убираем "часики"
-    await callback.answer()
+async def handle_check_subscription(callback: types.CallbackQuery, session: AsyncSession):
+    user_id = callback.from_user.id
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_tg_id(user_id)
+
+    await callback.answer() # Убираем "часики" сразу
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    if user_id == settings.ADMIN_TG_ID:
+        from bot.keyboards.admin_kb import get_admin_menu_keyboard
+        await callback.message.answer(
+            "👨‍💼 <b>Панель администратора</b>",
+            reply_markup=get_admin_menu_keyboard()
+        )
+    elif user and user.is_approved:
+        # ИСПРАВЛЕНИЕ: вызываем БЕЗ аргументов и БЕЗ await, как в cmd_start
+        await callback.message.answer(
+            f"✅ <b>Подписка подтверждена!</b>\n\n👋 Привет, {user.full_name}!\nВыберите действие:",
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        await callback.message.answer(
+            "👋 Добро пожаловать!\nДля получения доступа нажмите кнопку ниже:",
+            reply_markup=get_request_access_keyboard()
+        )
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, session: AsyncSession):
