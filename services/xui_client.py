@@ -650,19 +650,20 @@ class XUIClient:
         elif security == "reality":
             params["security"] = "reality"
             reality_settings = stream_settings.get("realitySettings", {})
+            inner_settings = reality_settings.get("settings", {})
             
             log.info(f"Reality settings keys: {reality_settings.keys() if reality_settings else 'None'}")
             log.info(f"Reality settings full: {reality_settings}")
             
             # Public key
-            pbk = reality_settings.get("publicKey", "")
+            pbk = inner_settings.get("publicKey") or reality_settings.get("publicKey", "")
             if pbk:
                 params["pbk"] = pbk
             else:
                 log.warning("Reality: publicKey not found")
             
             # Fingerprint
-            fp = reality_settings.get("fingerprint", "")
+            fp = inner_settings.get("fingerprint") or reality_settings.get("fingerprint", "")
             if fp:
                 params["fp"] = fp
             else:
