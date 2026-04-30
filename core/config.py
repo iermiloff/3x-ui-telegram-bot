@@ -1,5 +1,7 @@
 """Configuration module using Pydantic Settings."""
-
+import os
+from typing import List, Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +36,29 @@ class Settings(BaseSettings):
     LOG_FILE: str = "logs/bot.log"
     LOG_ROTATION: str = "00:00"  # Rotate at midnight
     LOG_RETENTION: str = "30 days"
+
+    # Список ID каналов (напр. -100123456789)
+    REQUIRED_CHANNELS: List[int] = []
+    # Список ссылок на эти каналы для кнопок
+    CHANNEL_URLS: List[str] = []
+    # Список ID администраторов (для доступа в админ-панель и обхода проверок)
+    ADMIN_IDS: List[int] = []
+
+    # Валидатор для превращения строки из .env в список чисел
+    @field_validator("REQUIRED_CHANNELS", "ADMIN_IDS", mode="before")
+    @classmethod
+    def parse_comma_separated_ints(cls, v: Any) -> List[int]:
+        if isinstance(v, str):
+            return [int(i.strip()) for i in v.split(",") if i.strip()]
+        return v
+
+    # Валидатор для превращения строки из .env в список ссылок
+    @field_validator("CHANNEL_URLS", mode="before")
+    @classmethod
+    def parse_comma_separated_str(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
     
     model_config = SettingsConfigDict(
         env_file=".env",
