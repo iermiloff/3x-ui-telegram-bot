@@ -348,12 +348,22 @@ class XUIClient:
         
         # Update via API
         request_data = {
-            "id": uuid,
-            "inboundId": inbound_id,
-            "enable": enable
+            "id": int(inbound_id),  # Теперь это точно целое число
+            "settings": json.dumps({
+                "clients": [{
+                    "id": uuid,
+                    "email": email,
+                    "enable": enable
+                }]
+            })
         }
-        
-        result = await self._make_request("POST", f"/panel/api/inbounds/updateClient/{uuid}", request_data)
+
+        # Отправляем запрос на обновление клиента
+        result = await self._make_request(
+            "POST", 
+            f"/panel/api/inbounds/updateClient/{uuid}", 
+            request_data
+        )
         
         if result.get("success"):
             log.info(f"Successfully updated client status: {email}")
