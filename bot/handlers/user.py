@@ -32,11 +32,19 @@ class AccessRequestStates(StatesGroup):
 router = Router()
 
 @router.callback_query(F.data == "check_subs")
-async def check_subs_button(callback: types.CallbackQuery):
-    # Если мы попали сюда, значит Middleware уже проверил подписку и пропустил нас
-    await callback.message.delete() # Удаляем сообщение с кнопками подписки
-    await callback.message.answer("✅ Спасибо за подписку! Теперь бот полностью доступен.")
-    await callback.answer() # Убираем "часики" с кнопки
+async def handle_check_subscription(callback: types.CallbackQuery):
+    # 1. Удаляем сообщение с кнопкой проверки
+    await callback.message.delete()
+    
+    # 2. Отправляем текст и ГЛАВНОЕ МЕНЮ
+    await callback.message.answer(
+        "✅ **Подписка подтверждена!**\n"
+        "Теперь вам доступны все функции бота. Используйте меню ниже.",
+        reply_markup=await get_main_menu_keyboard(callback.from_user.id) # Ваша функция меню
+    )
+    
+    # 3. Убираем "часики"
+    await callback.answer()
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, session: AsyncSession):
