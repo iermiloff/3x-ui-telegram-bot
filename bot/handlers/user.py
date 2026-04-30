@@ -31,6 +31,12 @@ class AccessRequestStates(StatesGroup):
 
 router = Router()
 
+@router.callback_query(F.data == "check_subs")
+async def check_subs_button(callback: types.CallbackQuery):
+    # Если мы попали сюда, значит Middleware уже проверил подписку и пропустил нас
+    await callback.message.delete() # Удаляем сообщение с кнопками подписки
+    await callback.message.answer("✅ Спасибо за подписку! Теперь бот полностью доступен.")
+    await callback.answer() # Убираем "часики" с кнопки
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, session: AsyncSession):
