@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Telegram Bot
     BOT_TOKEN: str
     ADMIN_TG_ID: int
+    ADMIN_IDS_RAW: str = ""
+    REQUIRED_CHANNELS_RAW: str = ""
+    CHANNEL_URLS_RAW: str = ""
     
     # 3x-ui API
     XUI_BASE_URL: str  # Example: https://your-server.com
@@ -36,36 +39,38 @@ class Settings(BaseSettings):
     LOG_FILE: str = "logs/bot.log"
     LOG_ROTATION: str = "00:00"  # Rotate at midnight
     LOG_RETENTION: str = "30 days"
-
-    # Список ID каналов (напр. -100123456789)
-    REQUIRED_CHANNELS: List[int] = []
-    # Список ссылок на эти каналы для кнопок
-    CHANNEL_URLS: List[str] = []
-    # Список ID администраторов (для доступа в админ-панель и обхода проверок)
-    ADMIN_IDS: List[int] = []
-
-    # Валидатор для превращения строки из .env в список чисел
-    @field_validator("REQUIRED_CHANNELS", "ADMIN_IDS", mode="before")
-    @classmethod
-    def parse_comma_separated_ints(cls, v: Any) -> List[int]:
-        if isinstance(v, str):
-            return [int(i.strip()) for i in v.split(",") if i.strip()]
-        return v
-
-    # Валидатор для превращения строки из .env в список ссылок
-    @field_validator("CHANNEL_URLS", mode="before")
-    @classmethod
-    def parse_comma_separated_str(cls, v: Any) -> List[str]:
-        if isinstance(v, str):
-            return [i.strip() for i in v.split(",") if i.strip()]
-        return v
     
+    # --- Динамические свойства (превращают строки в списки для кода) ---
+    @property
+    def REQUIRED_CHANNELS(self) -> List[int]:
+        if not self.REQUIRED_CHANNELS_RAW:
+            return []
+        try:
+            return [int(i.strip()) for i in self.REQUIRED_CHANNELS_RAW.split(",") if i.strip()]
+        except Exception:
+            return []
+
+    @property
+    def CHANNEL_URLS(self) -> List[str]:
+        if not self.CHANNEL_URLS_RAW:
+            return []
+        return [i.strip() for i in self.CHANNEL_URLS_RAW.split(",") if i.strip()]
+
+    @property
+    def ADMIN_IDS(self) -> List[int]:
+        if not self.ADMIN_IDS_RAW:
+            return []
+        try:
+            return [int(i.strip()) for i in self.ADMIN_IDS_RAW.split(",") if i.strip()]
+        except Exception:
+            return []
+
+    # Настройки Pydantic
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True
+        extra="ignore"
     )
-
 
 # Global settings instance
 settings = Settings()
