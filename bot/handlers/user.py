@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from aiogram import Router, F
+from aiogram import Router, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
