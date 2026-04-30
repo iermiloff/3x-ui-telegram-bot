@@ -16,84 +16,56 @@ class CheckSubscriptionMiddleware(BaseMiddleware):
         event: Any,
         data: Dict[str, Any]
     ) -> Any:
-        # Работаем только с сообщениями и кнопками
         if not isinstance(event, (Message, CallbackQuery)):
             return await handler(event, data)
 
-        # Пропускаем проверку для администраторов
-        user_id = event.from_user.id
-        if user_id in settings.ADMIN_IDS:
-            return await handler(event, data)
-
         bot = data['bot']
-        # Получаем сессию из вашего DatabaseMiddleware
         session = data.get("session")
         if not session:
-            log.error("Session not found in Middleware data")
             return await handler(event, data)
 
         repo = UserRepository(session)
+        user_id = event.from_user.id
 
-        # 1. Проверяем подписку на все каналы
+        # 1. Проверяем подписку
         subscribed = await is_subscribed(bot, user_id)
         
         if subscribed:
-            # 2. АВТО-АКТИВАЦИЯ: Если пользователь подписан, но VPN в базе выключен
+            # АВТО-АКТИВАЦИЯ
             user = await repo.get_by_tg_id(user_id)
             if user and user.is_approved and not user.is_active:
                 try:
                     async with XUIClient() as xui:
-                        # Включаем клиента в панели 3x-ui
                         success = await xui.update_client_status(
-                            email=user.email,
-                            uuid=user.uuid,
-                            inbound_id=user.inbound_id,
-                            enable=True
+                            email=user.email, uuid=user.uuid, inbound_id=user.inbound_id, enable=True
                         )
                         if success:
-                            # Включаем статус в нашей базе данных
                             await repo.update_active_status(user.id, True)
-                            await bot.send_message(
-                                user_id, 
-                                "✅ **Подписка подтверждена!**\nВаш VPN-доступ был автоматически активирован."
-                            )
-                            log.info(f"Auto-activated VPN for user {user_id}")
+                            await bot.send_message(user_id, "✅ VPN активирован!")
                 except Exception as e:
-                    log.error(f"Error during auto-activation for {user_id}: {e}")
+                    log.error(f"Error auto-activation: {e}")
             
-            # Пропускаем к выполнению основной команды
             return await handler(event, data)
 
-        # 3. ЕСЛИ НЕ ПОДПИСАН: Блокируем доступ и выводим кнопки
+        # 2. ЕСЛИ НЕ ПОДПИСАН
         builder = InlineKeyboardBuilder()
-        
-        # Динамически создаем кнопки на основе списка URL из .env
         for i, url in enumerate(settings.CHANNEL_URLS, start=1):
-            builder.row(InlineKeyboardButton(
-                text=f"📢 Подписаться на канал №{i}", 
-                url=url
-            ))
+            builder.row(InlineKeyboardButton(text=f"📢 Канал №{i}", url=url))
+        builder.row(InlineKeyboardButton(text="🔄 Я подписался", callback_data="check_subs"))
 
-        # Добавляем кнопку ручной проверки
-        builder.row(InlineKeyboardButton(
-            text="🔄 Проверить подписку", 
-            callback_data="check_subs"
-        ))
-
-        error_text = (
-            "⚠️ **Доступ ограничен**\n\n"
-            "Для использования этого VPN-бота необходимо быть подписанным на наши информационные каналы.\n\n"
-            "После подписки нажмите кнопку «Проверить подписку» или просто отправьте любую команду."
-        )
+        text = "❌ **Доступ ограничен**\n\nПожалуйста, подпишитесь на наши каналы для использования VPN."
 
         if isinstance(event, Message):
-            await event.answer(error_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+            await event.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
         elif isinstance(event, CallbackQuery):
-            # Если юзер нажал на кнопку, а подписки всё еще нет
+            # ВОТ ЗДЕСЬ БЫЛА ОШИБКА. Добавляем логику ответа на кнопку
             if event.data == "check_subs":
-                await event.answer("❌ Вы всё еще не подписаны на все каналы!", show_alert=True)
+                await event.answer("⚠️ Вы всё еще не подписались!", show_alert=True)
             else:
-                # Для всех остальных кнопок просто показываем предупреждение
-                await event.message.edit_text(error_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+                # Для других кнопок просто обновляем текст
+                try:
+                    await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+                except:
+                    pass
         
-        return # Прерываем выполнение хендлера
+        return # Прерываем выполнение
