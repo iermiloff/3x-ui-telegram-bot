@@ -809,10 +809,12 @@ class XUIClient:
         password = client.get("password") or client.get("id", "")
         email = client.get("email", "")
         
-        # 2. Оригинальное определение адреса сервера
+        # 2. Исправленное определение адреса сервера (берём только хост/IP без портов панели)
         server = inbound.get("listen", "0.0.0.0")
         if server == "0.0.0.0" or server == "":
-            server = self.base_url.replace("https://", "").replace("http://", "").split(":")
+            # Очищаем base_url от протокола и портов (сплитим по '/' и ':', берём только хост)
+            clean_url = self.base_url.replace("https://", "").replace("http://", "")
+            server = clean_url.split("/")[0].split(":")[0]
         
         # 3. Базовые параметры ссылки
         params = {
@@ -820,7 +822,7 @@ class XUIClient:
             "security": security
         }
         
-        # КРИТИЧЕСКАЯ ПРАВКА: Если stream_settings пришел в виде строки (JSON), принудительно парсим его в dict
+        # Конвертируем stream_settings в словарь, если пришла строка
         if isinstance(stream_settings, str):
             try:
                 stream_settings = json.loads(stream_settings)
@@ -840,7 +842,7 @@ class XUIClient:
             if sni:
                 params["sni"] = sni
                 
-        # 6. Настройки REALITY
+        # 6. Настройки REALITY (Берем строго первые элементы списков)
         elif security == "reality":
             reality_settings = stream_settings.get("realitySettings", {}) if isinstance(stream_settings, dict) else {}
             
@@ -850,19 +852,23 @@ class XUIClient:
             # Фингерпринт клиента или дефолт панели
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем чистую строку SNI
+            # Извлекаем ПЕРВЫЙ элемент из списка serverNames (без скобок и кавычек)
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and len(server_names) > 0:
-                params["sni"] = server_names
+                params["sni"] = str(server_names[0])
             elif isinstance(server_names, str):
                 params["sni"] = server_names
-                
-            # Извлекаем чистую строку Short ID
+            else:
+                params["sni"] = ""
+            
+            # Извлекаем ПЕРВЫЙ элемент из списка shortIds (без скобок и кавычек)
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and len(short_ids) > 0:
-                params["sid"] = short_ids
+                params["sid"] = str(short_ids[0])
             elif isinstance(short_ids, str):
                 params["sid"] = short_ids
+            else:
+                params["sid"] = ""
                 
             params["spx"] = "/"
         
