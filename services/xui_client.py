@@ -794,7 +794,7 @@ class XUIClient:
     
     async def _build_trojan_link(self, inbound: dict, client: dict) -> str:
         """Build a valid trojan:// connection link with Reality and gRPC support."""
-        from urllib.parse import urlencode, quote
+        from urllib.parse import urlencode, quote, urlparse
         import json
         from core.config import settings
         
@@ -805,15 +805,20 @@ class XUIClient:
         obj = inbound.get("obj", {}) or inbound
         remark = obj.get("remark", "Trojan")
         
-        # 2. Безопасно определяем хост и порт (учитываем закомментированные/пустые поля)
-        server = settings.XUI_EXTERNAL_ADDRESS or settings.VLESS_SERVER or "ваша_нода_или_ip"
-        
-        # Если порт в настройках пустой, равен 0 или закомментирован, берем из конфига VLESS или инбаунда
-        port = settings.XUI_EXTERNAL_PORT or settings.VLESS_PORT or obj.get("port", 443)
-        if str(port).strip() == "0" or not port:
-            port = obj.get("port", 443)
-        
-        # 3. Парсим streamSettings инбаунда
+        # 2. ДИНАМИЧЕСКИЙ ДОМЕН: Если внешний адрес не задан, вырезаем домен/IP напрямую из URL панели
+        if settings.XUI_EXTERNAL_ADDRESS:
+            server = settings.XUI_EXTERNAL_ADDRESS
+        else:
+            # urlparse("https://92.63.102.17:52472").hostname вернет чистый IP "92.63.102.17"
+            parsed_url = urlparse(settings.XUI_BASE_URL)
+            server = parsed_url.hostname or "ваш_ip"
+            
+        # 3. ДИНАМИЧЕСКИЙ ПОРТ: Берем порт инбаунда панели. Игнорируем заглушки из VLESS_PORT
+        port = obj.get("port", 443)
+        if settings.XUI_EXTERNAL_PORT and str(settings.XUI_EXTERNAL_PORT).strip() != "0":
+            port = settings.XUI_EXTERNAL_PORT
+
+        # 4. Парсим streamSettings инбаунда
         stream_settings_str = obj.get("streamSettings", "{}")
         stream_settings = {}
         if isinstance(stream_settings_str, str):
@@ -826,7 +831,7 @@ class XUIClient:
 
         params = {}
         
-        # 4. Обработка типа транспорта (gRPC / TCP)
+        # 5. Обработка типа транспорта (gRPC / TCP)
         network = stream_settings.get("network", "tcp")
         params["type"] = network
         
@@ -835,7 +840,7 @@ class XUIClient:
             params["serviceName"] = grpc_settings.get("serviceName", "")
             params["authority"] = ""
 
-        # 5. Обработка безопасности (Reality)
+        # 6. Обработка безопасности (Reality)
         security = stream_settings.get("security", "none")
         if security:
             params["security"] = security
@@ -849,19 +854,23 @@ class XUIClient:
             # Финерпринт (fp)
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем первый рабочий SNI из списка
+            # Извлекаем первый рабочий SNI из списка serverNames
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and server_names:
                 params["sni"] = server_names[0]
+            elif isinstance(server_names, str):
+                params["sni"] = server_names
             else:
-                params["sni"] = server_names or ""
+                params["sni"] = ""
             
-            # Извлекаем первый Short ID (sid) из списка
+            # Извлекаем первый Short ID (sid) из списка shortIds
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and short_ids:
                 params["sid"] = short_ids[0]
+            elif isinstance(short_ids, str):
+                params["sid"] = short_ids
             else:
-                params["sid"] = short_ids or ""
+                params["sid"] = ""
             
             # Разделитель параметров для Trojan Reality ссылки
             params["spx"] = "%2F"
