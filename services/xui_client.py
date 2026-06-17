@@ -832,7 +832,7 @@ class XUIClient:
             if sni:
                 params["sni"] = sni
                 
-        # 6. Добавление поддержки REALITY (извлечение строк из массивов panels)
+        # 6. Добавление поддержки REALITY
         elif security == "reality":
             reality_settings = stream_settings.get("realitySettings", {})
             
@@ -842,14 +842,14 @@ class XUIClient:
             # Фингерпринт клиента или дефолт панели
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем чистую строку SNI (serverNames — это список в 3x-ui)
+            # Извлекаем чистую строку SNI
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and len(server_names) > 0:
                 params["sni"] = server_names[0]
             elif isinstance(server_names, str):
                 params["sni"] = server_names
                 
-            # Извлекаем чистую строку Short ID (shortIds — это список в 3x-ui)
+            # Извлекаем чистую строку Short ID
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and len(short_ids) > 0:
                 params["sid"] = short_ids[0]
