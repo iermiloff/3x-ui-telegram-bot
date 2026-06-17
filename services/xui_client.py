@@ -247,6 +247,10 @@ class XUIClient:
             "reset": 0
         }
         
+        # ПРАВКА: Если панель работает по протоколу trojan, дублируем uuid в поле password
+        if protocol == "trojan":
+            client_data["password"] = uuid
+
         # Add fingerprint for Reality
         if fingerprint:
             client_data["fingerprint"] = fingerprint
