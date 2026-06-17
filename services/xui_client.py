@@ -801,8 +801,9 @@ class XUIClient:
         network: str,
         security: str
     ) -> str:
-        """Build Trojan connection link with correct Reality and gRPC parameters."""
+        """Build Trojan connection link with fully parsed Reality data."""
         from urllib.parse import urlencode, quote
+        import json
         
         # 1. Извлекаем пароль (или UUID) и email
         password = client.get("password") or client.get("id", "")
@@ -811,7 +812,7 @@ class XUIClient:
         # 2. Оригинальное определение адреса сервера
         server = inbound.get("listen", "0.0.0.0")
         if server == "0.0.0.0" or server == "":
-            server = self.base_url.replace("https://", "").replace("http://", "").split(":")[0]
+            server = self.base_url.replace("https://", "").replace("http://", "").split(":")
         
         # 3. Базовые параметры ссылки
         params = {
@@ -819,44 +820,50 @@ class XUIClient:
             "security": security
         }
         
+        # КРИТИЧЕСКАЯ ПРАВКА: Если stream_settings пришел в виде строки (JSON), принудительно парсим его в dict
+        if isinstance(stream_settings, str):
+            try:
+                stream_settings = json.loads(stream_settings)
+            except Exception:
+                stream_settings = {}
+
         # 4. Настройки gRPC транспорта
         if network == "grpc":
-            grpc_settings = stream_settings.get("grpcSettings", {})
+            grpc_settings = stream_settings.get("grpcSettings", {}) if isinstance(stream_settings, dict) else {}
             params["serviceName"] = grpc_settings.get("serviceName", "")
             params["authority"] = ""
         
         # 5. Настройки классического TLS
         if security == "tls":
-            tls_settings = stream_settings.get("tlsSettings", {})
+            tls_settings = stream_settings.get("tlsSettings", {}) if isinstance(stream_settings, dict) else {}
             sni = tls_settings.get("serverName", "")
             if sni:
                 params["sni"] = sni
                 
-        # 6. Настройки REALITY (Исправлены ключи и извлечение строк)
+        # 6. Настройки REALITY
         elif security == "reality":
-            reality_settings = stream_settings.get("realitySettings", {})
+            reality_settings = stream_settings.get("realitySettings", {}) if isinstance(stream_settings, dict) else {}
             
-            # ПРАВКА 1: Ключ в API 3x-ui регистрозависимый — 'publicKey' с заглавной K
+            # Извлекаем публичный ключ панели (теперь он точно прочитается)
             params["pbk"] = reality_settings.get("publicKey", "")
             
             # Фингерпринт клиента или дефолт панели
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем первый SNI из списка serverNames без квадратных скобок
+            # Извлекаем чистую строку SNI
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and len(server_names) > 0:
-                params["sni"] = server_names[0]
+                params["sni"] = server_names
             elif isinstance(server_names, str):
                 params["sni"] = server_names
                 
-            # Извлекаем первый Short ID из списка shortIds без квадратных скобок
+            # Извлекаем чистую строку Short ID
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and len(short_ids) > 0:
-                params["sid"] = short_ids[0]
+                params["sid"] = short_ids
             elif isinstance(short_ids, str):
                 params["sid"] = short_ids
                 
-            # ПРАВКА 2: Передаем чистый символ, urlencode сам закодирует его в %2F
             params["spx"] = "/"
         
         # 7. Сборка query-строки и финальной ссылки
