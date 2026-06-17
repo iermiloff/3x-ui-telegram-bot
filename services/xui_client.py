@@ -792,33 +792,25 @@ class XUIClient:
         
         return f"vmess://{vmess_base64}"
     
-    async def _build_trojan_link(self, inbound: dict, client: dict) -> str:
-        """Build a valid trojan:// connection link with Reality and gRPC support."""
+    async     def _build_trojan_link(self, inbound: dict, client: dict) -> str:
+        """Build a valid trojan:// connection link directly from 3x-ui data."""
         from urllib.parse import urlencode, quote, urlparse
         import json
         from core.config import settings
         
-        # 1. Получаем базовые данные пользователя
+        # 1. Данные пользователя
         password = client.get("password") or client.get("id", "")
         email = client.get("email", "unknown")
         
         obj = inbound.get("obj", {}) or inbound
         remark = obj.get("remark", "Trojan")
         
-        # 2. ДИНАМИЧЕСКИЙ ДОМЕН: Если внешний адрес не задан, вырезаем домен/IP напрямую из URL панели
-        if settings.XUI_EXTERNAL_ADDRESS:
-            server = settings.XUI_EXTERNAL_ADDRESS
-        else:
-            # urlparse("https://92.63.102.17:52472").hostname вернет чистый IP "92.63.102.17"
-            parsed_url = urlparse(settings.XUI_BASE_URL)
-            server = parsed_url.hostname or "ваш_ip"
-            
-        # 3. ДИНАМИЧЕСКИЙ ПОРТ: Берем порт инбаунда панели. Игнорируем заглушки из VLESS_PORT
+        # 2. Домен и Порт берутся строго из адреса панели и настроек инбаунда
+        parsed_url = urlparse(settings.XUI_BASE_URL)
+        server = parsed_url.hostname or "ваш_ip"
         port = obj.get("port", 443)
-        if settings.XUI_EXTERNAL_PORT and str(settings.XUI_EXTERNAL_PORT).strip() != "0":
-            port = settings.XUI_EXTERNAL_PORT
-
-        # 4. Парсим streamSettings инбаунда
+        
+        # 3. Парсим streamSettings инбаунда
         stream_settings_str = obj.get("streamSettings", "{}")
         stream_settings = {}
         if isinstance(stream_settings_str, str):
@@ -831,7 +823,7 @@ class XUIClient:
 
         params = {}
         
-        # 5. Обработка типа транспорта (gRPC / TCP)
+        # 4. Тип транспорта
         network = stream_settings.get("network", "tcp")
         params["type"] = network
         
@@ -840,7 +832,7 @@ class XUIClient:
             params["serviceName"] = grpc_settings.get("serviceName", "")
             params["authority"] = ""
 
-        # 6. Обработка безопасности (Reality)
+        # 5. Безопасность Reality
         security = stream_settings.get("security", "none")
         if security:
             params["security"] = security
@@ -851,37 +843,36 @@ class XUIClient:
             # Публичный ключ
             params["pbk"] = reality_settings.get("publicKey", "")
             
-            # Финерпринт (fp)
+            # Фингерпринт
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем первый рабочий SNI из списка serverNames
+            # Берем СТРОГО первый элемент из списка маскировочных сайтов (sni)
             server_names = reality_settings.get("serverNames", [])
-            if isinstance(server_names, list) and server_names:
+            if isinstance(server_names, list) and len(server_names) > 0:
                 params["sni"] = server_names[0]
             elif isinstance(server_names, str):
                 params["sni"] = server_names
             else:
                 params["sni"] = ""
             
-            # Извлекаем первый Short ID (sid) из списка shortIds
+            # Берем СТРОГО первый элемент из списка Short IDs (sid)
             short_ids = reality_settings.get("shortIds", [])
-            if isinstance(short_ids, list) and short_ids:
+            if isinstance(short_ids, list) and len(short_ids) > 0:
                 params["sid"] = short_ids[0]
             elif isinstance(short_ids, str):
                 params["sid"] = short_ids
             else:
                 params["sid"] = ""
             
-            # Разделитель параметров для Trojan Reality ссылки
             params["spx"] = "%2F"
 
-        # Формируем итоговую строку параметров URL
+        # Формируем query-строку параметров
         query_string = urlencode(params)
         
-        # Собираем имя подключения в формате Панели: ИмяИнбаунда-ИмяКлиента
+        # Название ссылки: ИмяИнбаунда-ИмяКлиента
         final_remark = f"{remark}-{email}"
         
-        # Возвращаем идеальную рабочую ссылку
+        # Сборка финальной строки
         return f"trojan://{password}@{server}:{port}?{query_string}#{quote(final_remark)}"
-        
+
         return link
