@@ -324,44 +324,56 @@ class XUIClient:
         inbound_id: int,
         enable: bool
     ) -> bool:
-        """Update client enable/disable status."""
+        """Update client enable/disable status dynamically for VLESS and Trojan."""
         log.info(f"Updating client status: email={email}, enable={enable}")
         
-        # Get current inbound configuration
+        # 1. Получаем текущую конфигурацию инбаунда
         inbound_data = await self.get_inbound(inbound_id)
         
         if not inbound_data.get("success"):
             raise XUIClientError("Failed to get inbound configuration")
-        
+            
         obj = inbound_data.get("obj")
+        protocol = obj.get("protocol", "").lower()  # Определяем протокол (vless или trojan)
+        
         settings_str = obj.get("settings", "{}")
         settings_dict = json.loads(settings_str)
         
-        # Find and update client
+        # 2. Ищем клиента в списке инбаунда для валидации
         clients = settings_dict.get("clients", [])
         client_found = False
         
         for client in clients:
-            if client.get("email") == email or client.get("id") == uuid:
+            # Для Trojan проверяем и по email, и по password
+            if client.get("email") == email or client.get("id") == uuid or client.get("password") == uuid:
                 client["enable"] = enable
                 client_found = True
                 break
-        
+                
         if not client_found:
             raise XUIClientError(f"Client not found: {email}")
+            
+        # 3. Формируем данные обновления в зависимости от протокола
+        client_payload = {
+            "email": email,
+            "enable": enable
+        }
         
-        # Update via API
+        if protocol == "trojan":
+            # Для Trojan панель требует именно поле "password"
+            client_payload["password"] = uuid
+        else:
+            # Для VLESS оставляем стандартное поле "id"
+            client_payload["id"] = uuid
+            
+        # 4. Собираем финальный запрос к API панели
         request_data = {
-            "id": int(inbound_id),  # Теперь это точно целое число
+            "id": int(inbound_id),
             "settings": json.dumps({
-                "clients": [{
-                    "id": uuid,
-                    "email": email,
-                    "enable": enable
-                }]
+                "clients": [client_payload]
             })
         }
-
+        
         # Отправляем запрос на обновление клиента
         result = await self._make_request(
             "POST", 
