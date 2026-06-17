@@ -792,87 +792,80 @@ class XUIClient:
         
         return f"vmess://{vmess_base64}"
     
-    async     def _build_trojan_link(self, inbound: dict, client: dict) -> str:
-        """Build a valid trojan:// connection link directly from 3x-ui data."""
-        from urllib.parse import urlencode, quote, urlparse
-        import json
-        from core.config import settings
+    async def _build_trojan_link(
+        self,
+        client: dict,
+        inbound: dict,
+        stream_settings: dict,
+        port: int,
+        network: str,
+        security: str
+    ) -> str:
+        """Build Trojan connection link with Reality and gRPC support."""
+        from urllib.parse import urlencode, quote
         
-        # 1. Данные пользователя
+        # 1. Извлекаем пароль (или сохраненный UUID) и email
         password = client.get("password") or client.get("id", "")
-        email = client.get("email", "unknown")
+        email = client.get("email", "")
         
-        obj = inbound.get("obj", {}) or inbound
-        remark = obj.get("remark", "Trojan")
+        # 2. Оригинальное определение адреса сервера
+        server = inbound.get("listen", "0.0.0.0")
+        if server == "0.0.0.0" or server == "":
+            server = self.base_url.replace("https://", "").replace("http://", "").split(":")[0]
         
-        # 2. Домен и Порт берутся строго из адреса панели и настроек инбаунда
-        parsed_url = urlparse(settings.XUI_BASE_URL)
-        server = parsed_url.hostname or "ваш_ip"
-        port = obj.get("port", 443)
+        # 3. Базовые параметры ссылки
+        params = {
+            "type": network,
+            "security": security
+        }
         
-        # 3. Парсим streamSettings инбаунда
-        stream_settings_str = obj.get("streamSettings", "{}")
-        stream_settings = {}
-        if isinstance(stream_settings_str, str):
-            try:
-                stream_settings = json.loads(stream_settings_str)
-            except Exception:
-                pass
-        else:
-            stream_settings = stream_settings_str
-
-        params = {}
-        
-        # 4. Тип транспорта
-        network = stream_settings.get("network", "tcp")
-        params["type"] = network
-        
+        # 4. Поддержка gRPC транспорта
         if network == "grpc":
             grpc_settings = stream_settings.get("grpcSettings", {})
             params["serviceName"] = grpc_settings.get("serviceName", "")
             params["authority"] = ""
-
-        # 5. Безопасность Reality
-        security = stream_settings.get("security", "none")
-        if security:
-            params["security"] = security
-            
-        if security == "reality":
+        
+        # 5. Оригинальная поддержка обычного TLS
+        if security == "tls":
+            tls_settings = stream_settings.get("tlsSettings", {})
+            sni = tls_settings.get("serverName", "")
+            if sni:
+                params["sni"] = sni
+                
+        # 6. Добавление поддержки REALITY (извлечение строк из массивов panels)
+        elif security == "reality":
             reality_settings = stream_settings.get("realitySettings", {})
             
             # Публичный ключ
             params["pbk"] = reality_settings.get("publicKey", "")
             
-            # Фингерпринт
+            # Фингерпринт клиента или дефолт панели
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Берем СТРОГО первый элемент из списка маскировочных сайтов (sni)
+            # Извлекаем чистую строку SNI (serverNames — это список в 3x-ui)
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and len(server_names) > 0:
                 params["sni"] = server_names[0]
             elif isinstance(server_names, str):
                 params["sni"] = server_names
-            else:
-                params["sni"] = ""
-            
-            # Берем СТРОГО первый элемент из списка Short IDs (sid)
+                
+            # Извлекаем чистую строку Short ID (shortIds — это список в 3x-ui)
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and len(short_ids) > 0:
                 params["sid"] = short_ids[0]
             elif isinstance(short_ids, str):
                 params["sid"] = short_ids
-            else:
-                params["sid"] = ""
-            
+                
+            # Специфичный для Trojan Reality разделитель путей
             params["spx"] = "%2F"
-
-        # Формируем query-строку параметров
+        
+        # 7. Сборка ссылки
         query_string = urlencode(params)
         
-        # Название ссылки: ИмяИнбаунда-ИмяКлиента
+        # Название ссылки в формате Панели: ИмяИнбаунда-ИмяКлиента
+        remark = inbound.get("remark", "Trojan")
         final_remark = f"{remark}-{email}"
         
-        # Сборка финальной строки
         return f"trojan://{password}@{server}:{port}?{query_string}#{quote(final_remark)}"
 
         return link
