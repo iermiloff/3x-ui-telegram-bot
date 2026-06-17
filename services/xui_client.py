@@ -792,40 +792,87 @@ class XUIClient:
         
         return f"vmess://{vmess_base64}"
     
-    async def _build_trojan_link(
-        self,
-        client: dict,
-        inbound: dict,
-        stream_settings: dict,
-        port: int,
-        network: str,
-        security: str
-    ) -> str:
-        """Build Trojan connection link."""
+    async def _build_trojan_link(self, inbound: dict, client: dict) -> str:
+        """Build a valid trojan:// connection link with Reality and gRPC support."""
         from urllib.parse import urlencode, quote
+        import json
+        from core.config import settings
         
-        password = client.get("password", "")
-        email = client.get("email", "")
+        # 1. Получаем базовые данные пользователя
+        password = client.get("password") or client.get("id", "")
+        email = client.get("email", "unknown")
         
-        # Get server address
-        server = inbound.get("listen", "0.0.0.0")
-        if server == "0.0.0.0" or server == "":
-            server = self.base_url.replace("https://", "").replace("http://", "").split(":")[0]
+        obj = inbound.get("obj", {}) or inbound
+        remark = obj.get("remark", "Trojan")
         
-        # Build query parameters
-        params = {
-            "type": network,
-            "security": security
-        }
+        # 2. Безопасно определяем хост и порт (учитываем закомментированные/пустые поля)
+        server = settings.XUI_EXTERNAL_ADDRESS or settings.VLESS_SERVER or "ваша_нода_или_ip"
         
-        if security == "tls":
-            tls_settings = stream_settings.get("tlsSettings", {})
-            sni = tls_settings.get("serverName", "")
-            if sni:
-                params["sni"] = sni
+        # Если порт в настройках пустой, равен 0 или закомментирован, берем из конфига VLESS или инбаунда
+        port = settings.XUI_EXTERNAL_PORT or settings.VLESS_PORT or obj.get("port", 443)
+        if str(port).strip() == "0" or not port:
+            port = obj.get("port", 443)
         
-        # Build link
+        # 3. Парсим streamSettings инбаунда
+        stream_settings_str = obj.get("streamSettings", "{}")
+        stream_settings = {}
+        if isinstance(stream_settings_str, str):
+            try:
+                stream_settings = json.loads(stream_settings_str)
+            except Exception:
+                pass
+        else:
+            stream_settings = stream_settings_str
+
+        params = {}
+        
+        # 4. Обработка типа транспорта (gRPC / TCP)
+        network = stream_settings.get("network", "tcp")
+        params["type"] = network
+        
+        if network == "grpc":
+            grpc_settings = stream_settings.get("grpcSettings", {})
+            params["serviceName"] = grpc_settings.get("serviceName", "")
+            params["authority"] = ""
+
+        # 5. Обработка безопасности (Reality)
+        security = stream_settings.get("security", "none")
+        if security:
+            params["security"] = security
+            
+        if security == "reality":
+            reality_settings = stream_settings.get("realitySettings", {})
+            
+            # Публичный ключ
+            params["pbk"] = reality_settings.get("publicKey", "")
+            
+            # Финерпринт (fp)
+            params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
+            
+            # Извлекаем первый рабочий SNI из списка
+            server_names = reality_settings.get("serverNames", [])
+            if isinstance(server_names, list) and server_names:
+                params["sni"] = server_names[0]
+            else:
+                params["sni"] = server_names or ""
+            
+            # Извлекаем первый Short ID (sid) из списка
+            short_ids = reality_settings.get("shortIds", [])
+            if isinstance(short_ids, list) and short_ids:
+                params["sid"] = short_ids[0]
+            else:
+                params["sid"] = short_ids or ""
+            
+            # Разделитель параметров для Trojan Reality ссылки
+            params["spx"] = "%2F"
+
+        # Формируем итоговую строку параметров URL
         query_string = urlencode(params)
-        link = f"trojan://{password}@{server}:{port}?{query_string}#{quote(email)}"
+        
+        # Собираем имя подключения в формате Панели: ИмяИнбаунда-ИмяКлиента
+        final_remark = f"{remark}-{email}"
+        
+        # Возвращаем идеальную рабочую ссылку
+        return f"trojan://{password}@{server}:{port}?{query_string}#{quote(final_remark)}"
         
         return link
