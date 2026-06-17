@@ -809,10 +809,9 @@ class XUIClient:
         password = client.get("password") or client.get("id", "")
         email = client.get("email", "")
         
-        # 2. Исправленное определение адреса сервера (берём только хост/IP без портов панели)
+        # 2. Исправленное определение адреса сервера
         server = inbound.get("listen", "0.0.0.0")
         if server == "0.0.0.0" or server == "":
-            # Очищаем base_url от протокола и портов (сплитим по '/' и ':', берём только хост)
             clean_url = self.base_url.replace("https://", "").replace("http://", "")
             server = clean_url.split("/")[0].split(":")[0]
         
@@ -842,17 +841,25 @@ class XUIClient:
             if sni:
                 params["sni"] = sni
                 
-        # 6. Настройки REALITY (Берем строго первые элементы списков)
+        # 6. Настройки REALITY
         elif security == "reality":
             reality_settings = stream_settings.get("realitySettings", {}) if isinstance(stream_settings, dict) else {}
             
-            # Извлекаем публичный ключ панели (теперь он точно прочитается)
-            params["pbk"] = reality_settings.get("publicKey", "")
+            # УНИВЕРСАЛЬНЫЙ ПОИСК ПУБЛИЧНОГО КЛЮЧА:
+            # Проверяем все возможные варианты названия ключа в разных форках 3x-ui
+            pbk = (
+                reality_settings.get("publicKey") or 
+                reality_settings.get("publickey") or 
+                stream_settings.get("publicKey") or 
+                stream_settings.get("publickey") or 
+                ""
+            )
+            params["pbk"] = pbk
             
             # Фингерпринт клиента или дефолт панели
             params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
             
-            # Извлекаем ПЕРВЫЙ элемент из списка serverNames (без скобок и кавычек)
+            # Извлекаем первый элемент из списка serverNames
             server_names = reality_settings.get("serverNames", [])
             if isinstance(server_names, list) and len(server_names) > 0:
                 params["sni"] = str(server_names[0])
@@ -861,7 +868,7 @@ class XUIClient:
             else:
                 params["sni"] = ""
             
-            # Извлекаем ПЕРВЫЙ элемент из списка shortIds (без скобок и кавычек)
+            # Извлекаем первый элемент из списка shortIds
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and len(short_ids) > 0:
                 params["sid"] = str(short_ids[0])
@@ -875,7 +882,7 @@ class XUIClient:
         # 7. Сборка query-строки и финальной ссылки
         query_string = urlencode(params)
         
-        # Форматирование имени: ИмяИнбаунда-ИмяКлиента (как в панели)
+        # Форматирование имени: ИмяИнбаунда-ИмяКлиента
         remark = inbound.get("remark", "Trojan")
         final_remark = f"{remark}-{email}"
         
