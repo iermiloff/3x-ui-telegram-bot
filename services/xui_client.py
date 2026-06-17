@@ -801,91 +801,77 @@ class XUIClient:
         network: str,
         security: str
     ) -> str:
-        """Build Trojan connection link with fully parsed Reality data."""
+        """Build Trojan connection link mirroring the VLESS parsing logic."""
         from urllib.parse import urlencode, quote
-        import json
         
         # 1. Извлекаем пароль (или UUID) и email
         password = client.get("password") or client.get("id", "")
         email = client.get("email", "")
         
-        # 2. Исправленное определение адреса сервера
+        # 2. Получаем адрес сервера (оригинальная логика из твоего файла)
         server = inbound.get("listen", "0.0.0.0")
-        if server == "0.0.0.0" or server == "":
-            clean_url = self.base_url.replace("https://", "").replace("http://", "")
-            server = clean_url.split("/")[0].split(":")[0]
-        
+        if server == "0.0.0.0" or server == "" or server == "localhost":
+            server = self.base_url.replace("https://", "").replace("http://", "").split(":")[0]
+            
         # 3. Базовые параметры ссылки
         params = {
             "type": network,
             "security": security
         }
         
-        # Конвертируем stream_settings в словарь, если пришла строка
-        if isinstance(stream_settings, str):
-            try:
-                stream_settings = json.loads(stream_settings)
-            except Exception:
-                stream_settings = {}
-
-        # 4. Настройки gRPC транспорта
-        if network == "grpc":
-            grpc_settings = stream_settings.get("grpcSettings", {}) if isinstance(stream_settings, dict) else {}
-            params["serviceName"] = grpc_settings.get("serviceName", "")
-            params["authority"] = ""
-        
-        # 5. Настройки классического TLS
+        # 4. Настройки TLS
         if security == "tls":
-            tls_settings = stream_settings.get("tlsSettings", {}) if isinstance(stream_settings, dict) else {}
+            tls_settings = stream_settings.get("tlsSettings", {})
             sni = tls_settings.get("serverName", "")
             if sni:
                 params["sni"] = sni
+            alpn = tls_settings.get("alpn", [])
+            if alpn:
+                params["alpn"] = ",".join(alpn)
                 
-        # 6. Настройки REALITY
+        # 5. Настройки REALITY (Копируем логику VLESS один в один)
         elif security == "reality":
-            reality_settings = stream_settings.get("realitySettings", {}) if isinstance(stream_settings, dict) else {}
+            reality_settings = stream_settings.get("realitySettings", {})
+            inner_settings = reality_settings.get("settings", {}) or {}
             
-            # УНИВЕРСАЛЬНЫЙ ПОИСК ПУБЛИЧНОГО КЛЮЧА:
-            # Проверяем все возможные варианты названия ключа в разных форках 3x-ui
-            pbk = (
-                reality_settings.get("publicKey") or 
-                reality_settings.get("publickey") or 
-                stream_settings.get("publicKey") or 
-                stream_settings.get("publickey") or 
-                ""
-            )
-            params["pbk"] = pbk
-            
-            # Фингерпринт клиента или дефолт панели
-            params["fp"] = client.get("fingerprint") or reality_settings.get("fingerprint", "qq")
-            
-            # Извлекаем первый элемент из списка serverNames
-            server_names = reality_settings.get("serverNames", [])
-            if isinstance(server_names, list) and len(server_names) > 0:
-                params["sni"] = str(server_names[0])
-            elif isinstance(server_names, str):
-                params["sni"] = server_names
-            else:
-                params["sni"] = ""
-            
-            # Извлекаем первый элемент из списка shortIds
-            short_ids = reality_settings.get("shortIds", [])
-            if isinstance(short_ids, list) and len(short_ids) > 0:
-                params["sid"] = str(short_ids[0])
-            elif isinstance(short_ids, str):
-                params["sid"] = short_ids
-            else:
-                params["sid"] = ""
+            # Извлекаем Public Key
+            pbk = inner_settings.get("publicKey") or reality_settings.get("publicKey", "")
+            if pbk:
+                params["pbk"] = pbk
                 
-            params["spx"] = "/"
+            # Извлекаем Fingerprint
+            fp = inner_settings.get("fingerprint") or reality_settings.get("fingerprint", "")
+            if fp:
+                params["fp"] = fp
+                
+            # Извлекаем чистую строку SNI (берём первый элемент списка)
+            server_names = reality_settings.get("serverNames", [])
+            if server_names:
+                params["sni"] = server_names[0]
+                
+            # Извлекаем чистую строку Short ID (берём первый элемент списка)
+            short_ids = reality_settings.get("shortIds", [])
+            if short_ids and short_ids[0]:
+                params["sid"] = short_ids[0]
+                
+            # Извлекаем Spider X
+            spider_x = reality_settings.get("spiderX", "")
+            if spider_x:
+                params["spx"] = spider_x
         
-        # 7. Сборка query-строки и финальной ссылки
-        query_string = urlencode(params)
+        # 6. Настройки gRPC транспорта
+        if network == "grpc":
+            grpc_settings = stream_settings.get("grpcSettings", {})
+            service_name = grpc_settings.get("serviceName", "")
+            if service_name:
+                params["serviceName"] = service_name
         
-        # Форматирование имени: ИмяИнбаунда-ИмяКлиента
-        remark = inbound.get("remark", "Trojan")
-        final_remark = f"{remark}-{email}"
+        # 7. Сборка ссылки с кастомным ремарком, как в панели
+        query_string = urlencode(params, safe="/:,")
         
-        return f"trojan://{password}@{server}:{port}?{query_string}#{quote(final_remark)}"
+        inbound_remark = inbound.get("remark", "VPN")
+        remark = f"{inbound_remark} - {email}"
+        
+        return f"trojan://{password}@{server}:{port}?{query_string}#{quote(remark)}"
 
         return link
